@@ -17,10 +17,10 @@ private let kGreenNodeName = "GreenRubbishItem"
 private let kGarbageBinName = "garbage bin"
 private let kRecycleBinName = "recycling bin"
 private let kCompostBinName = "compost bin"
-private let kChyronName = "chyron"
+private let kLearnedBinName = "learned bin"
 
-private var attributes : [NSObjectProtocol] = ["NodeColor"]
-private var examples : [[NSObjectProtocol]] = [[]]
+private var attributes : [NSObjectProtocol] = ["NodeColor" as NSObjectProtocol, "Foo" as NSObjectProtocol]
+private var examples : [[NSObjectProtocol]] = []
 private var actions  : [NSObjectProtocol] = []
 
 // Physics constants
@@ -32,8 +32,6 @@ var gameMoves : [String:String]? = nil
 
 class GameScene: SKScene, SKPhysicsContactDelegate {
     
-    var entities = [GKEntity]()
-    var graphs = [GKGraph]()
     var selectedNode : SKSpriteNode?
     var rubbishItem : SKSpriteNode!
     
@@ -43,6 +41,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     
     override func sceneDidLoad() {
         self.loadRubbishItem()
+        let chyron = self.childNode(withName: kLearnedBinName) as! SKSpriteNode
+        chyron.alpha = 0.5
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -72,32 +72,46 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     //Game Functions
     
     func checkForDisposal() {
-        if selectedNode != nil {
-            let binNode = binForRubbishItem(item: selectedNode!)
-            //let intersects : Bool = (selectedNode?.intersects(binNode))!
-            let intersects : Bool = binNode.frame.contains((selectedNode?.frame)!)
-            if intersects {
-                // make a note that we have placed item A in bin B
-                self.logDisposal(rubbishItem: selectedNode!, inBin: binNode)
-                self.removeRubbishItem(item: selectedNode!)
+        guard let selectedNode = selectedNode,
+              let name = selectedNode.name
+            else { return }
+        
+        let binNode = findBinNamed(name)
+        //let intersects = (selectedNode?.intersects(binNode))!
+        let contained = binNode.frame.contains(selectedNode.frame)
+        if contained {
+            // make a note that we have placed item A in bin B
+            self.logDisposal(rubbishItem: selectedNode, inBin: binNode)
+            self.removeRubbishItem(item: selectedNode)
+        } else {
+            let chyron = self.childNode(withName: kLearnedBinName) as! SKSpriteNode
+            if chyron.frame.contains((selectedNode.frame)) {
+                // get a random target
+                let targetBin = self.getLearnedBin()
+                let chyron = self.childNode(withName: kLearnedBinName) as! SKSpriteNode
+                let enable = examples.first(where: {  $0[0] as! String == kGreenNodeName }) != nil &&
+                    examples.first(where: {  $0[0] as! String == kBlueNodeName }) != nil &&
+                    examples.first(where: {  $0[0] as! String == kBlackNodeName }) != nil
+                chyron.alpha = enable ? 1 : 0.5
+
+                self.move(rubbishItem: selectedNode, toBin: targetBin)
             } else {
-                let chyron = self.childNode(withName: kChyronName) as! SKSpriteNode
-                if chyron.frame.contains((selectedNode?.frame)!) {
-                    // get a random target
-                    let targetBin = self.getLearnedBin()
-                    self.move(rubbishItem: selectedNode!, toBin: targetBin)
-                } else {
-                    self.returnRubbishItem(item: selectedNode!)
-                }
+                self.returnRubbishItem(item: selectedNode)
             }
         }
+        let chyron = self.childNode(withName: kLearnedBinName) as! SKSpriteNode
+        let enable = examples.first(where: {  $0[0] as! String == kGreenNodeName }) != nil &&
+            examples.first(where: {  $0[0] as! String == kBlueNodeName }) != nil &&
+            examples.first(where: {  $0[0] as! String == kBlackNodeName }) != nil
+        chyron.alpha = enable ? 1 : 0.5
+
     }
     
     func logDisposal(rubbishItem: SKSpriteNode, inBin: SKSpriteNode) {
-        let rubbishItemName = rubbishItem.name
+        let rubbishItemName = rubbishItem.name!
         let binName = inBin.name
-        examples.append([rubbishItemName!])
-        actions.append(binName!)
+        examples.append([rubbishItemName as NSObjectProtocol, "Bar" as NSObjectProtocol])
+        actions.append(binName! as NSObjectProtocol)
     }
     
     func returnRubbishItem(item: SKSpriteNode) {
@@ -115,17 +129,17 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
     
-    func binForRubbishItem(item: SKSpriteNode) -> SKSpriteNode {
-        let rubbishItem = item.name
-        var bin : SKSpriteNode? = SKSpriteNode()
-        if rubbishItem == kBlackNodeName {
-            bin = self.childNode(withName: kGarbageBinName) as? SKSpriteNode
-        } else if rubbishItem == kBlueNodeName {
-            bin = self.childNode(withName: kRecycleBinName) as? SKSpriteNode
-        } else if rubbishItem == kGreenNodeName {
-            bin = self.childNode(withName: kCompostBinName) as? SKSpriteNode
+    func findBinNamed(_ name: String) -> SKSpriteNode {
+        switch name {
+            case kBlackNodeName:
+                return childNode(withName: kGarbageBinName) as! SKSpriteNode
+            case kBlueNodeName:
+                return childNode(withName: kRecycleBinName) as! SKSpriteNode
+            case kGreenNodeName:
+                return childNode(withName: kCompostBinName) as! SKSpriteNode
+            default:
+                return SKSpriteNode()
         }
-        return bin!
     }
     
     func loadRubbishItem() {
@@ -133,7 +147,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let rubbishItems  = SKScene(fileNamed: "RubbishItem")!.children
         let randomSource = GKShuffledDistribution(forDieWithSideCount: 3)
         let index = randomSource.nextInt() - 1
-        let rubbishItem : SKSpriteNode = rubbishItems[index] as! SKSpriteNode
+        let rubbishItem = rubbishItems[index]
         rubbishItem.removeFromParent()
         self.addChild(rubbishItem)
         rubbishItem.physicsBody!.contactTestBitMask = binMask
@@ -157,7 +171,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // move to recycle, move to compost, or move to trash
         // first question is bogus
         let baseQuestion = "Test?"
-        let randomDecisionTree = GKDecisionTree(attribute: baseQuestion)
+        let randomDecisionTree = GKDecisionTree(attribute: baseQuestion as NSObjectProtocol)
         let rootNode = randomDecisionTree.rootNode
         
         let trashAction = kGarbageBinName
@@ -169,24 +183,28 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // won't load one for you by default.
         randomDecisionTree.randomSource = GKRandomSource()
         
-        rootNode?.createBranch(withWeight: 3, attribute: trashAction)
-        rootNode?.createBranch(withWeight: 3, attribute: recycleAction)
-        rootNode?.createBranch(withWeight: 3, attribute: compostAction)
+        rootNode?.createBranch(weight: 3, attribute: trashAction as NSObjectProtocol)
+        rootNode?.createBranch(weight: 3, attribute: recycleAction as NSObjectProtocol)
+        rootNode?.createBranch(weight: 3, attribute: compostAction as NSObjectProtocol)
         
         let randomBin = randomDecisionTree.findAction(forAnswers: [:]) as! String
         
         return self.childNode(withName: randomBin) as! SKSpriteNode
-        
     }
     
     func getLearnedBin() -> SKSpriteNode {
-        // If you call this before correctly disposing of one of each type of item,
-        // the app will crash because the decision tree will be incomplete.
-        // Caveat Coder.
-        let filteredExamples = examples.filter({$0.count > 0})
-        let myDecisionTree = GKDecisionTree(examples: filteredExamples, actions: actions, attributes: attributes)
-        let binName = myDecisionTree.findAction(forAnswers: ["NodeColor":self.selectedNode!.name!])
-        return self.childNode(withName: binName as! String) as! SKSpriteNode
+        guard
+            examples.count > 0,
+            let node = selectedNode,
+            let name = node.name,
+            examples.first(where: {  $0[0] as! String == kGreenNodeName }) != nil,
+            examples.first(where: {  $0[0] as! String == kBlueNodeName }) != nil,
+            examples.first(where: {  $0[0] as! String == kBlackNodeName }) != nil
+            else { return SKSpriteNode() }
+        
+        let myDecisionTree = GKDecisionTree(examples: examples, actions: actions, attributes: attributes)
+        print(myDecisionTree.description)
+        let binName = myDecisionTree.findAction(forAnswers: ["NodeColor": name as NSObjectProtocol]) as? String
+        return childNode(withName: binName!) as! SKSpriteNode
     }
-    
 }
